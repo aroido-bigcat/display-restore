@@ -1,5 +1,6 @@
+import Foundation
 import Testing
-@testable import DisplayRestoreKit
+@testable import LayoutRecallKit
 
 @Test
 func exactIdentifiersMatchEvenWhenDisplayOrderChanges() {
@@ -43,4 +44,39 @@ func weakSignalsStayInManualRecoveryFlow() {
 
     #expect(decision.action == .offerManualFix)
     #expect(decision.profileName == "Office Dock")
+}
+
+@Test
+func liveHardwareDisplaySnapshotMatchesItsOwnDraftProfile() async throws {
+    guard ProcessInfo.processInfo.environment["DISPLAY_RESTORE_RUN_LIVE_HARDWARE_TESTS"] == "1" else {
+        return
+    }
+
+    let displays = try await DisplaySnapshotReader().currentDisplays()
+    #expect(displays.count >= 2)
+
+    let uniqueKeys = Set(displays.map { displays.uniqueMatchKey(for: $0) })
+    #expect(uniqueKeys.count == displays.count)
+
+    for display in displays {
+        #expect(display.resolution.width > 0)
+        #expect(display.resolution.height > 0)
+    }
+
+    let plan = try DisplayplacerCommandBuilder().restorePlan(for: displays)
+    let profile = DisplayProfile.draft(
+        name: "Live Hardware",
+        displays: displays,
+        layoutPlan: plan
+    )
+
+    let coordinator = RestoreCoordinator()
+    let decision = coordinator.decide(
+        for: displays,
+        profiles: [profile],
+        dependencyAvailable: true
+    )
+
+    #expect(decision.profileName == "Live Hardware")
+    #expect(decision.action == .autoRestore(command: profile.layout.engine.command))
 }

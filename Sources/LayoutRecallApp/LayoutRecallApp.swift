@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @main
-struct DisplayRestoreApp: App {
+struct LayoutRecallApp: App {
     @StateObject private var model = AppModel()
 
     init() {
@@ -10,13 +10,13 @@ struct DisplayRestoreApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("Display Restore", systemImage: "display.2") {
+        MenuBarExtra("LayoutRecall", systemImage: "display.2") {
             MenuContentView(model: model)
         }
+        .menuBarExtraStyle(.window)
 
         Settings {
             SettingsView(model: model)
         }
     }
 }
-

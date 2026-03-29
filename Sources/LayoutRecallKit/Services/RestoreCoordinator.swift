@@ -28,7 +28,11 @@ public struct RestoreCoordinator: Sendable {
         self.matcher = matcher
     }
 
-    public func decide(for currentDisplays: [DisplaySnapshot], profiles: [DisplayProfile]) -> RestoreDecision {
+    public func decide(
+        for currentDisplays: [DisplaySnapshot],
+        profiles: [DisplayProfile],
+        dependencyAvailable: Bool = true
+    ) -> RestoreDecision {
         guard !currentDisplays.isEmpty else {
             return RestoreDecision(action: .idle, reason: "No displays detected.")
         }
@@ -60,6 +64,15 @@ public struct RestoreCoordinator: Sendable {
             )
         }
 
+        guard dependencyAvailable else {
+            return RestoreDecision(
+                action: .offerManualFix,
+                profileName: match.profile.name,
+                score: match.score,
+                reason: "displayplacer is not installed, so automatic restore is blocked."
+            )
+        }
+
         return RestoreDecision(
             action: .autoRestore(command: match.profile.layout.engine.command),
             profileName: match.profile.name,
@@ -68,4 +81,3 @@ public struct RestoreCoordinator: Sendable {
         )
     }
 }
-

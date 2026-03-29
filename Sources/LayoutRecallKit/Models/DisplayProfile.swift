@@ -82,11 +82,7 @@ public struct DisplayProfile: Codable, Equatable, Sendable, Identifiable {
 }
 
 public extension DisplayProfile {
-    static func draft(name: String, displays: [DisplaySnapshot], command: String) -> DisplayProfile {
-        let origins = displays.map {
-            DisplayOrigin(key: $0.preferredMatchKey, x: $0.bounds.x, y: $0.bounds.y)
-        }
-
+    static func draft(name: String, displays: [DisplaySnapshot], layoutPlan: GeneratedLayoutPlan) -> DisplayProfile {
         return DisplayProfile(
             name: name,
             displaySet: DisplaySet(
@@ -95,9 +91,29 @@ public extension DisplayProfile {
                 displays: displays
             ),
             layout: LayoutDefinition(
-                primaryDisplayKey: displays.first?.preferredMatchKey ?? "primary",
+                primaryDisplayKey: layoutPlan.primaryDisplayKey,
+                expectedOrigins: layoutPlan.expectedOrigins,
+                engine: LayoutEngineCommand(type: "displayplacer", command: layoutPlan.command)
+            )
+        )
+    }
+
+    static func draft(name: String, displays: [DisplaySnapshot], command: String) -> DisplayProfile {
+        let origins = displays.map {
+            DisplayOrigin(
+                key: displays.uniqueMatchKey(for: $0),
+                x: $0.bounds.x,
+                y: $0.bounds.y
+            )
+        }
+
+        return draft(
+            name: name,
+            displays: displays,
+            layoutPlan: GeneratedLayoutPlan(
+                command: command,
                 expectedOrigins: origins,
-                engine: LayoutEngineCommand(type: "displayplacer", command: command)
+                primaryDisplayKey: displays.first.map { displays.uniqueMatchKey(for: $0) } ?? "primary"
             )
         )
     }
@@ -105,7 +121,6 @@ public extension DisplayProfile {
     static let officeDock = DisplayProfile.draft(
         name: "Office Dock",
         displays: DisplaySnapshot.developmentDesk,
-        command: "displayplacer 'id:ULTRA-LEFT-001 origin:(0,0) res:2560x1440 hz:60' 'id:ULTRA-RIGHT-001 origin:(2560,0) res:2560x1440 hz:60'"
+        command: "displayplacer 'id:persistent-left enabled:true origin:(0,0) res:2560x1440 hz:60 scaling:off' 'id:persistent-right enabled:true origin:(2560,0) res:2560x1440 hz:60 scaling:off'"
     )
 }
-

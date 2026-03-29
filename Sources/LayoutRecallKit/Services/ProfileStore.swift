@@ -1,13 +1,13 @@
 import Foundation
 
-public actor ProfileStore {
+public actor ProfileStore: ProfileStoring {
     public let fileURL: URL
 
     public init(fileURL: URL? = nil) {
-        self.fileURL = fileURL ?? ProfileStore.defaultFileURL()
+        self.fileURL = fileURL ?? LayoutRecallStorage.fileURL(named: "profiles.json")
     }
 
-    public func loadProfiles() throws -> [DisplayProfile] {
+    public func loadProfiles() async throws -> [DisplayProfile] {
         guard FileManager.default.fileExists(atPath: fileURL.path()) else {
             return []
         }
@@ -16,7 +16,7 @@ public actor ProfileStore {
         return try JSONDecoder().decode([DisplayProfile].self, from: data)
     }
 
-    public func saveProfiles(_ profiles: [DisplayProfile]) throws {
+    public func saveProfiles(_ profiles: [DisplayProfile]) async throws {
         try FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
@@ -29,14 +29,4 @@ public actor ProfileStore {
         let data = try encoder.encode(profiles)
         try data.write(to: fileURL, options: .atomic)
     }
-
-    private static func defaultFileURL() -> URL {
-        let baseDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-
-        return baseDirectory
-            .appendingPathComponent("DisplayRestore", isDirectory: true)
-            .appendingPathComponent("profiles.json", isDirectory: false)
-    }
 }
-

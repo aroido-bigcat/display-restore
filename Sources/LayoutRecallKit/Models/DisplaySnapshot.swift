@@ -70,11 +70,48 @@ public struct DisplaySnapshot: Codable, Equatable, Sendable, Identifiable {
             ?? contextualID
             ?? id
     }
+
+    var candidateMatchKeys: [String] {
+        [alphaSerialNumber, serialNumber, persistentID, contextualID, id]
+            .compactMap { $0 }
+    }
+
+    public var allMatchKeys: [String] {
+        [alphaSerialNumber, serialNumber, persistentID, contextualID, id]
+            .compactMap { $0 }
+    }
+
+    public func matches(storedKey: String) -> Bool {
+        allMatchKeys.contains(storedKey)
+    }
+
+    public static func positionComparator(lhs: DisplaySnapshot, rhs: DisplaySnapshot) -> Bool {
+        if lhs.bounds.x != rhs.bounds.x {
+            return lhs.bounds.x < rhs.bounds.x
+        }
+
+        if lhs.bounds.y != rhs.bounds.y {
+            return lhs.bounds.y < rhs.bounds.y
+        }
+
+        return lhs.id < rhs.id
+    }
 }
 
 public extension Array where Element == DisplaySnapshot {
+    func uniqueMatchKey(for display: DisplaySnapshot) -> String {
+        for candidate in display.candidateMatchKeys {
+            let matches = filter { $0.allMatchKeys.contains(candidate) }.count
+            if matches == 1 {
+                return candidate
+            }
+        }
+
+        return display.id
+    }
+
     var fingerprint: String {
-        map(\.preferredMatchKey)
+        map { uniqueMatchKey(for: $0) }
             .sorted()
             .joined(separator: "|")
     }
@@ -82,7 +119,7 @@ public extension Array where Element == DisplaySnapshot {
 
 public extension DisplaySnapshot {
     static let sampleLeft = DisplaySnapshot(
-        id: "left",
+        id: "69734006",
         vendorID: 7789,
         productID: 2468,
         serialNumber: "SERIAL-LEFT",
@@ -96,7 +133,7 @@ public extension DisplaySnapshot {
     )
 
     static let sampleRight = DisplaySnapshot(
-        id: "right",
+        id: "69734007",
         vendorID: 7789,
         productID: 2468,
         serialNumber: "SERIAL-RIGHT",
@@ -113,4 +150,3 @@ public extension DisplaySnapshot {
         [sampleLeft, sampleRight]
     }
 }
-
