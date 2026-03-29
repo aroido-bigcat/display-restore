@@ -3,18 +3,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "DisplayRestore",
+    name: "LayoutRecall",
+    defaultLocalization: "en",
     platforms: [
         .macOS(.v13)
     ],
     products: [
         .library(
-            name: "DisplayRestoreKit",
-            targets: ["DisplayRestoreKit"]
+            name: "LayoutRecallKit",
+            targets: ["LayoutRecallKit"]
         ),
         .executable(
-            name: "DisplayRestoreApp",
-            targets: ["DisplayRestoreApp"]
+            name: "LayoutRecallApp",
+            targets: ["LayoutRecallApp"]
         )
     ],
     dependencies: [
@@ -22,21 +23,39 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "DisplayRestoreApp",
-            dependencies: ["DisplayRestoreKit"],
+            name: "LayoutRecallApp",
+            dependencies: ["LayoutRecallKit"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("SwiftUI"),
-                .linkedFramework("Combine")
+                .linkedFramework("Combine"),
+                .linkedFramework("Carbon")
             ]
         ),
         .target(
-            name: "DisplayRestoreKit"
+            name: "LayoutRecallKit",
+            resources: [
+                .process("Resources")
+            ],
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("ColorSync"),
+                .linkedFramework("CoreGraphics"),
+                .linkedFramework("ServiceManagement")
+            ]
         ),
         .testTarget(
-            name: "DisplayRestoreKitTests",
+            name: "LayoutRecallKitTests",
             dependencies: [
-                "DisplayRestoreKit",
+                "LayoutRecallKit",
+                .product(name: "Testing", package: "swift-testing")
+            ]
+        ),
+        .testTarget(
+            name: "LayoutRecallAppTests",
+            dependencies: [
+                "LayoutRecallApp",
+                "LayoutRecallKit",
                 .product(name: "Testing", package: "swift-testing")
             ]
         )

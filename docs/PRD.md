@@ -31,8 +31,8 @@ Restore a saved macOS multi-display layout after dock reconnect, sleep wake, or 
 
 ## Initial architecture
 
-- `DisplayRestoreApp`: menu bar shell and settings surface
-- `DisplayRestoreKit`: models, matcher, coordinator, persistence, logging
+- `LayoutRecallApp`: menu bar shell and settings surface
+- `LayoutRecallKit`: models, matcher, coordinator, persistence, logging
 - `ProfileMatcher`: weighted scoring based on serials, IDs, resolution, scale
 - `RestoreCoordinator`: translates scores into safe actions
 - `ProfileStore`: JSON persistence in Application Support

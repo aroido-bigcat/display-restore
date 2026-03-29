@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SOURCE_SVG="$ROOT_DIR/design/icons/layoutrecall-app-icon.svg"
+OUTPUT_DIR="$ROOT_DIR/Packaging"
+OUTPUT_ICONSET="$OUTPUT_DIR/AppIcon.iconset"
+OUTPUT_ICNS="$OUTPUT_DIR/AppIcon.icns"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/layoutrecall-appicon.XXXXXX")"
+
+cleanup() {
+  rm -rf "$TMP_DIR"
+}
+
+trap cleanup EXIT
+
+if [[ ! -f "$SOURCE_SVG" ]]; then
+  echo "Missing source SVG: $SOURCE_SVG" >&2
+  exit 1
+fi
+
+mkdir -p "$OUTPUT_DIR" "$TMP_DIR"
+rm -rf "$OUTPUT_ICONSET"
+mkdir -p "$OUTPUT_ICONSET"
+
+qlmanage -t -s 1024 -o "$TMP_DIR" "$SOURCE_SVG" >/dev/null 2>&1
+MASTER_PNG="$TMP_DIR/$(basename "$SOURCE_SVG").png"
+
+if [[ ! -f "$MASTER_PNG" ]]; then
+  echo "Failed to render app icon source into a PNG thumbnail." >&2
+  exit 1
+fi
+
+render_size() {
+  local dimension="$1"
+  local output_name="$2"
+  sips -z "$dimension" "$dimension" "$MASTER_PNG" --out "$OUTPUT_ICONSET/$output_name" >/dev/null
+}
+
+render_size 16 icon_16x16.png
+render_size 32 icon_16x16@2x.png
+render_size 32 icon_32x32.png
+render_size 64 icon_32x32@2x.png
+render_size 128 icon_128x128.png
+render_size 256 icon_128x128@2x.png
+render_size 256 icon_256x256.png
+render_size 512 icon_256x256@2x.png
+render_size 512 icon_512x512.png
+render_size 1024 icon_512x512@2x.png
+
+iconutil -c icns "$OUTPUT_ICONSET" -o "$OUTPUT_ICNS"
+
+echo "Generated $OUTPUT_ICNS"
