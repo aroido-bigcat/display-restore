@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MODE="full"
+
+if [[ "${1:-}" == "--mode" ]]; then
+    MODE="${2:-}"
+    shift 2
+fi
+
+if [[ "$MODE" != "full" ]]; then
+    echo "unsupported mode: $MODE" >&2
+    exit 2
+fi
+
+cd "$ROOT_DIR"
+
+make build
+make test
