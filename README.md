@@ -45,6 +45,18 @@ Open `Package.swift` in Xcode if you want an IDE workflow. The current app targe
 - Build and test do not require `displayplacer`.
 - The current implementation targets the common two external display workflow first, especially the identical-monitor left/right swap problem.
 
+## Release updates
+
+- The app checks GitHub Releases for `aroido-bigcat/layoutrecall` and can prompt the user to update or skip a specific version.
+- Automatic checks can be turned off from `General > Updates`.
+- To build a release archive for GitHub Releases, run:
+
+```bash
+./scripts/build-release-archive VERSION=0.1.0
+```
+
+- Upload the generated ZIP asset from `dist/releases/` to the matching GitHub Release so in-app updates can download it.
+
 ## License
 
 MIT. See `LICENSE`.

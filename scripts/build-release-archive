@@ -3,23 +3,17 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-$HOME/Library/Caches/layoutrecall-release-app}"
-OUTPUT_DIR="${OUTPUT_DIR:-$REPO_ROOT/dist}"
+OUTPUT_DIR="${OUTPUT_DIR:-$REPO_ROOT/dist/releases}"
 APP_NAME="LayoutRecall"
 EXECUTABLE_NAME="LayoutRecallApp"
 BUNDLE_ID="${BUNDLE_ID:-com.aroido.layoutrecall}"
 VERSION="${VERSION:-0.1.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d%H%M%S)}"
-FORCE_REGULAR_APP="${FORCE_REGULAR_APP:-0}"
 APP_BUNDLE="$OUTPUT_DIR/$APP_NAME.app"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/Applications}"
-INSTALL_TARGET="$INSTALL_DIR/$APP_NAME.app"
-LEGACY_APPS=("Display Restore.app")
+ARCHIVE_NAME="${ARCHIVE_NAME:-$APP_NAME-$VERSION-macos.zip}"
+ARCHIVE_PATH="$OUTPUT_DIR/$ARCHIVE_NAME"
 
-mkdir -p "$OUTPUT_DIR" "$INSTALL_DIR"
-
-for legacy_app in "${LEGACY_APPS[@]}"; do
-  rm -rf "$INSTALL_DIR/$legacy_app"
-done
+mkdir -p "$OUTPUT_DIR"
 
 swift build -c release --product "$EXECUTABLE_NAME" --scratch-path "$BUILD_DIR"
 
@@ -29,7 +23,7 @@ if [[ -z "$EXECUTABLE_PATH" ]]; then
   exit 1
 fi
 
-rm -rf "$APP_BUNDLE"
+rm -rf "$APP_BUNDLE" "$ARCHIVE_PATH"
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 cp "$REPO_ROOT/Packaging/LayoutRecall-Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 cp "$EXECUTABLE_PATH" "$APP_BUNDLE/Contents/MacOS/$EXECUTABLE_NAME"
@@ -43,15 +37,9 @@ fi
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP_BUNDLE/Contents/Info.plist"
 
-if [[ "$FORCE_REGULAR_APP" == "1" ]]; then
-  /usr/libexec/PlistBuddy -c "Set :LSUIElement false" "$APP_BUNDLE/Contents/Info.plist"
-fi
-
 codesign --force --deep --sign - "$APP_BUNDLE" >/dev/null
+ditto -c -k --keepParent "$APP_BUNDLE" "$ARCHIVE_PATH"
 
-rm -rf "$INSTALL_TARGET"
-ditto "$APP_BUNDLE" "$INSTALL_TARGET"
-
-echo "Installed: $INSTALL_TARGET"
+echo "Archive: $ARCHIVE_PATH"
 echo "Bundle ID: $BUNDLE_ID"
 echo "Version: $VERSION ($BUILD_NUMBER)"

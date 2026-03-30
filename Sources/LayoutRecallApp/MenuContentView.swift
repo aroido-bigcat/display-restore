@@ -2,172 +2,247 @@ import AppKit
 import LayoutRecallKit
 import SwiftUI
 
-private struct MenuActionItem: Identifiable {
-    let id: String
-    let title: String
-    let systemImage: String
-    let action: () -> Void
-}
-
 struct MenuContentView: View {
     @ObservedObject var model: AppModel
-
-    private var primaryAction: MenuActionItem? {
-        switch model.menuPrimaryState {
-        case .noProfiles:
-            return MenuActionItem(
-                id: "save",
-                title: L10n.t("action.save"),
-                systemImage: "square.and.arrow.down",
-                action: model.saveCurrentLayout
-            )
-        case .dependencyMissing:
-            return MenuActionItem(
-                id: "install",
-                title: model.installationInProgress
-                    ? L10n.t("dependency.installingDisplayplacer")
-                    : L10n.t("dependency.installDisplayplacer"),
-                systemImage: model.installationInProgress ? "hourglass" : "arrow.down.circle.fill",
-                action: model.installDisplayplacer
-            )
-        case .manualRecovery:
-            return MenuActionItem(
-                id: "fix-now",
-                title: L10n.t("action.fixNow"),
-                systemImage: "bolt.fill",
-                action: model.fixNow
-            )
-        case .healthy:
-            return nil
-        }
-    }
-
-    private var secondaryActions: [MenuActionItem] {
-        var actions: [MenuActionItem] = []
-
-        if model.menuPrimaryState == .healthy {
-            actions.append(
-                MenuActionItem(
-                    id: "fix-now-secondary",
-                    title: L10n.t("action.fixNow"),
-                    systemImage: "bolt.fill",
-                    action: model.fixNow
-                )
-            )
-        }
-
-        actions.append(
-            MenuActionItem(
-                id: "save-secondary",
-                title: L10n.t("action.save"),
-                systemImage: "square.and.arrow.down",
-                action: model.saveCurrentLayout
-            )
-        )
-        actions.append(
-            MenuActionItem(
-                id: "swap-secondary",
-                title: L10n.t("action.swap"),
-                systemImage: "arrow.left.and.right.square",
-                action: model.swapLeftRight
-            )
-        )
-
-        return actions
-    }
+    let openSettings: () -> Void
+    @State private var hasAnimatedIn = false
 
     var body: some View {
         ZStack {
             AppChromeBackground()
 
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 header
                 statusBlock
 
-                if let primaryAction {
-                    Button(action: primaryAction.action) {
-                        Label(primaryAction.title, systemImage: primaryAction.systemImage)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(ActionButtonStyle(role: .primary))
-                    .disabled(model.installationInProgress)
+                if let action = model.menuPrimaryAction {
+                    primaryActionButton(for: action)
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
-                LazyVGrid(
-                    columns: [
-                        GridItem(.flexible(), spacing: 8),
-                        GridItem(.flexible(), spacing: 8)
-                    ],
-                    spacing: 8
-                ) {
-                    ForEach(secondaryActions) { action in
-                        Button(action: action.action) {
-                            Label(action.title, systemImage: action.systemImage)
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(ActionButtonStyle(role: .secondary))
-                    }
+                if !model.menuQuickActions.isEmpty {
+                    quickActions
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
 
                 Divider()
+                    .padding(.top, 2)
 
                 footer
             }
-            .padding(16)
+            .padding(14)
+            .offset(y: hasAnimatedIn ? 0 : 6)
+            .opacity(hasAnimatedIn ? 1 : 0.96)
         }
-        .frame(width: 320)
+        .frame(width: 316)
+        .onAppear {
+            guard !hasAnimatedIn else { return }
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.88)) {
+                hasAnimatedIn = true
+            }
+        }
+        .animation(.spring(response: 0.30, dampingFraction: 0.84), value: model.menuTransitionKey)
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Text(L10n.t("app.name"))
                 .font(.headline.weight(.semibold))
 
             Spacer(minLength: 0)
 
-            LayoutRecallHeaderIcon(dimension: 28)
+            LayoutRecallSymbol(
+                tone: model.menuPrimaryState == .healthy ? .brand : .template,
+                lineWidth: 1.9
+            )
+                .frame(width: 20, height: 20)
+                .opacity(model.menuPrimaryState == .healthy ? 0.94 : 0.76)
         }
     }
 
     private var statusBlock: some View {
         GlassCard(padding: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(model.menuStatusTitle)
-                    .font(.title3.weight(.semibold))
-                    .fixedSize(horizontal: false, vertical: true)
+            ZStack(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 12) {
+                    statusBanner
 
-                Text(model.menuStatusSubtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(model.menuStatusTitle)
+                            .font(.title3.weight(.semibold))
+                            .fixedSize(horizontal: false, vertical: true)
 
-                Text(model.menuMetadataLine)
-                    .font(.caption)
+                        Text(model.menuStatusSubtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    evidencePills
+
+                    if let profile = model.referenceProfile {
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(L10n.t("menu.reference"))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+
+                                Text(profile.name)
+                                    .font(.subheadline.weight(.semibold))
+                                    .fixedSize(horizontal: false, vertical: true)
+
+                                Text(model.menuMetadataLine)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+
+                                if let recentActivityLine = model.menuRecentActivityLine {
+                                    Text(recentActivityLine)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+
+                            Spacer(minLength: 0)
+
+                            DisplayLayoutPreview(
+                                displays: model.referenceDisplays,
+                                primaryDisplayKey: model.referencePrimaryDisplayKey
+                            )
+                            .frame(width: 92, height: 62)
+                        }
+                    } else {
+                        Text(model.menuMetadataLine)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .id(model.menuTransitionKey)
+                .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
+            }
+        }
+    }
+
+    private var statusBanner: some View {
+        HStack(alignment: .center, spacing: 10) {
+            StatusPill(
+                text: model.menuStatePresentation.badgeText,
+                systemImage: model.menuStatePresentation.systemImage,
+                emphasis: model.menuPrimaryState != .healthy
+            )
+
+            Spacer(minLength: 0)
+
+            if let recentActivityLine = model.menuRecentActivityLine {
+                Text(recentActivityLine)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
+    private var evidencePills: some View {
+        AdaptiveGroup {
+            StatusPill(
+                text: model.autoRestoreBadgeText,
+                systemImage: "sparkles",
+                emphasis: model.autoRestoreEnabled
+            )
+
+            StatusPill(
+                text: model.dependencyBadgeText,
+                systemImage: model.installationInProgress ? "hourglass" : "shippingbox",
+                emphasis: model.dependencyAvailable
+            )
+
+            StatusPill(
+                text: model.displayBadgeText,
+                systemImage: "rectangle.on.rectangle"
+            )
+
+            if let confidenceBadgeText = model.confidenceBadgeText {
+                StatusPill(
+                    text: confidenceBadgeText,
+                    systemImage: "checkmark.seal",
+                    emphasis: model.confidencePresentation == .high
+                )
+            }
+        }
+    }
+
+    private var quickActions: some View {
+        HStack(spacing: 14) {
+            ForEach(model.menuQuickActions) { action in
+                Button(action: { model.perform(action) }) {
+                    Label(title(for: action), systemImage: systemImage(for: action))
+                }
+                .buttonStyle(InlineActionButtonStyle(accent: false))
+                .disabled(isDisabled(action))
+                .accessibilityIdentifier("menu.quick.\(action.rawValue)")
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
     private var footer: some View {
         HStack {
-            Button {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-            } label: {
-                Label(L10n.t("action.settings"), systemImage: "gearshape")
+            Button(L10n.t("action.settings")) {
+                openSettings()
             }
-            .buttonStyle(ActionButtonStyle(role: .quiet))
+            .buttonStyle(InlineActionButtonStyle())
+            .accessibilityIdentifier("menu.footer.settings")
 
             Spacer()
 
-            Button {
+            Button(L10n.t("action.quit")) {
                 NSApplication.shared.terminate(nil)
-            } label: {
-                Label(L10n.t("action.quit"), systemImage: "xmark.circle")
             }
-            .buttonStyle(ActionButtonStyle(role: .quiet))
+            .buttonStyle(InlineActionButtonStyle())
+            .accessibilityIdentifier("menu.footer.quit")
         }
-        .font(.caption.weight(.medium))
-        .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private func primaryActionButton(for action: SurfaceAction) -> some View {
+        Button(action: { model.perform(action) }) {
+            Label(model.menuTitle(for: action), systemImage: systemImage(for: action))
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ActionButtonStyle(role: .primary))
+        .disabled(isDisabled(action))
+        .accessibilityIdentifier("menu.primary.\(action.rawValue)")
+    }
+
+    private func title(for action: SurfaceAction) -> String {
+        switch action {
+        case .installDependency:
+            return model.installationInProgress
+                ? L10n.t("dependency.installingDisplayplacer")
+                : action.title
+        case .fixNow, .saveNewProfile:
+            return action == .saveNewProfile ? model.menuTitle(for: action) : action.title
+        }
+    }
+
+    private func systemImage(for action: SurfaceAction) -> String {
+        switch action {
+        case .installDependency:
+            return model.installationInProgress ? "hourglass" : action.systemImage
+        case .fixNow, .saveNewProfile:
+            return action.systemImage
+        }
+    }
+
+    private func isDisabled(_ action: SurfaceAction) -> Bool {
+        switch action {
+        case .installDependency:
+            return model.installationInProgress
+        case .fixNow, .saveNewProfile:
+            return false
+        }
     }
 }

@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import LayoutRecallKit
 import Foundation
@@ -17,9 +18,13 @@ final class AppModel: ObservableObject {
     @Published private(set) var latestDecision: RestoreDecision?
     @Published private(set) var latestMatchedProfileName: String?
     @Published private(set) var latestMatchScore: Int?
+    @Published private(set) var updateState: AppUpdateState = .idle
+    @Published private(set) var availableUpdate: AppRelease?
+    @Published var automaticUpdateChecksEnabled = true
     @Published var autoRestoreEnabled = true
     @Published var launchAtLoginEnabled = false
     @Published private(set) var shortcuts = ShortcutSettings()
+    @Published private(set) var skippedReleaseVersion: String?
 
     private let store: any ProfileStoring
     private let settingsStore: any AppSettingsStoring
@@ -33,6 +38,10 @@ final class AppModel: ObservableObject {
     private let verifier: any RestoreVerifying
     private let loginItemManager: any LoginItemManaging
     private let shortcutManager: any ShortcutManaging
+    private let updateChecker: any AppUpdateChecking
+    private let updateInstaller: any AppUpdateInstalling
+    private let updatePrompt: any AppUpdatePrompting
+    private let terminateApplication: @MainActor () -> Void
     private let debounceNanoseconds: UInt64
     private let restoreCooldown: TimeInterval
 
@@ -40,6 +49,7 @@ final class AppModel: ObservableObject {
     private var restoreCooldownUntil: Date?
     private var installationTask: Task<Void, Never>?
     private var automaticInstallAttempted = false
+    private var promptedUpdateVersion: String?
 
     init(
         store: any ProfileStoring = ProfileStore(),
@@ -54,6 +64,10 @@ final class AppModel: ObservableObject {
         verifier: any RestoreVerifying = RestoreVerifier(),
         loginItemManager: any LoginItemManaging = AppLoginItemManager(),
         shortcutManager: any ShortcutManaging = GlobalHotKeyManager(),
+        updateChecker: any AppUpdateChecking = NoopAppUpdateChecker(),
+        updateInstaller: any AppUpdateInstalling = NoopAppUpdateInstaller(),
+        updatePrompt: any AppUpdatePrompting = NoopAppUpdatePrompt(),
+        terminateApplication: @escaping @MainActor () -> Void = { NSApp.terminate(nil) },
         debounceNanoseconds: UInt64 = 2_000_000_000,
         restoreCooldown: TimeInterval = 8,
         autoBootstrap: Bool = true
@@ -70,6 +84,10 @@ final class AppModel: ObservableObject {
         self.verifier = verifier
         self.loginItemManager = loginItemManager
         self.shortcutManager = shortcutManager
+        self.updateChecker = updateChecker
+        self.updateInstaller = updateInstaller
+        self.updatePrompt = updatePrompt
+        self.terminateApplication = terminateApplication
         self.debounceNanoseconds = debounceNanoseconds
         self.restoreCooldown = restoreCooldown
 
@@ -93,6 +111,12 @@ final class AppModel: ObservableObject {
             allowAutomaticRestore: false,
             shouldRecordDecision: false
         )
+
+        if automaticUpdateChecksEnabled {
+            Task { @MainActor [weak self] in
+                await self?.checkForUpdates(userInitiated: false, promptIfAvailable: true)
+            }
+        }
     }
 
     func fixNow() {
@@ -116,6 +140,40 @@ final class AppModel: ObservableObject {
     func swapLeftRight() {
         Task {
             await performSwapLeftRight()
+        }
+    }
+
+    func checkForUpdatesNow() {
+        Task {
+            await checkForUpdates(userInitiated: true, promptIfAvailable: false)
+        }
+    }
+
+    func installAvailableUpdate() {
+        guard let availableUpdate else {
+            return
+        }
+
+        Task {
+            await installUpdate(availableUpdate)
+        }
+    }
+
+    func skipAvailableUpdateVersion() {
+        guard let availableUpdate else {
+            return
+        }
+
+        Task {
+            await markSkippedRelease(availableUpdate)
+        }
+    }
+
+    func clearSkippedUpdateVersion() {
+        skippedReleaseVersion = nil
+
+        Task {
+            await persistSettings()
         }
     }
 
@@ -166,12 +224,7 @@ final class AppModel: ObservableObject {
 
         Task {
             do {
-                try await settingsStore.saveSettings(
-                    AppSettings(
-                        launchAtLogin: enabled,
-                        shortcuts: shortcuts
-                    )
-                )
+                try await settingsStore.saveSettings(currentSettings())
                 let state = try await loginItemManager.setEnabled(enabled)
                 await MainActor.run {
                     self.loginItemLine = state.description
@@ -184,6 +237,22 @@ final class AppModel: ObservableObject {
                     self.loginItemLine = L10n.t("status.launchAtLoginUpdateFailed")
                     self.statusLine = L10n.t("status.failedUpdateLaunchAtLogin", error.localizedDescription)
                 }
+            }
+        }
+    }
+
+    func setAutomaticUpdateChecks(_ enabled: Bool) {
+        automaticUpdateChecksEnabled = enabled
+
+        if !enabled {
+            updateState = .idle
+        }
+
+        Task {
+            await persistSettings()
+
+            if enabled {
+                await checkForUpdates(userInitiated: false, promptIfAvailable: false)
             }
         }
     }
@@ -638,6 +707,8 @@ final class AppModel: ObservableObject {
             let settings = try await settingsStore.loadSettings()
             launchAtLoginEnabled = settings.launchAtLogin
             shortcuts = settings.shortcuts
+            automaticUpdateChecksEnabled = settings.automaticallyCheckForUpdates
+            skippedReleaseVersion = settings.skippedReleaseVersion
         } catch {
             statusLine = L10n.t("status.failedLoadSettings")
             decisionLine = error.localizedDescription
@@ -655,15 +726,102 @@ final class AppModel: ObservableObject {
 
     private func persistSettings() async {
         do {
-            try await settingsStore.saveSettings(
-                AppSettings(
-                    launchAtLogin: launchAtLoginEnabled,
-                    shortcuts: shortcuts
-                )
-            )
+            try await settingsStore.saveSettings(currentSettings())
         } catch {
             statusLine = L10n.t("status.failedSaveSettings")
             decisionLine = error.localizedDescription
+        }
+    }
+
+    private func currentSettings() -> AppSettings {
+        AppSettings(
+            launchAtLogin: launchAtLoginEnabled,
+            shortcuts: shortcuts,
+            automaticallyCheckForUpdates: automaticUpdateChecksEnabled,
+            skippedReleaseVersion: skippedReleaseVersion
+        )
+    }
+
+    private func checkForUpdates(userInitiated: Bool, promptIfAvailable: Bool) async {
+        guard !updateState.isBusy else {
+            return
+        }
+
+        updateState = .checking
+
+        do {
+            guard let release = try await updateChecker.fetchLatestRelease() else {
+                availableUpdate = nil
+                updateState = .noPublishedReleases
+                return
+            }
+
+            guard AppVersionComparator.isNewer(release.versionIdentifier, than: AppRuntimeMetadata.currentVersion) else {
+                availableUpdate = nil
+                updateState = .upToDate
+                return
+            }
+
+            availableUpdate = release
+
+            if !userInitiated, skippedReleaseVersion == release.versionIdentifier {
+                updateState = .skipped(release)
+                return
+            }
+
+            updateState = .available(release)
+
+            guard promptIfAvailable,
+                  promptedUpdateVersion != release.versionIdentifier else {
+                return
+            }
+
+            promptedUpdateVersion = release.versionIdentifier
+
+            let promptResponse = await updatePrompt.promptToInstall(
+                release: release,
+                currentVersion: AppRuntimeMetadata.currentVersion
+            )
+
+            switch promptResponse {
+            case .install:
+                await installUpdate(release)
+            case .skipThisVersion:
+                await markSkippedRelease(release)
+            case .later:
+                updateState = .available(release)
+            }
+        } catch let error as AppUpdateError {
+            availableUpdate = nil
+            updateState = error == .noPublishedReleases
+                ? .noPublishedReleases
+                : .failed(error.localizedDescription)
+        } catch {
+            availableUpdate = nil
+            updateState = .failed(error.localizedDescription)
+        }
+    }
+
+    private func markSkippedRelease(_ release: AppRelease) async {
+        skippedReleaseVersion = release.versionIdentifier
+        availableUpdate = release
+        updateState = .skipped(release)
+        await persistSettings()
+    }
+
+    private func installUpdate(_ release: AppRelease) async {
+        updateState = .downloading(release)
+
+        do {
+            try await updateInstaller.prepareUpdateInstallation(
+                release: release,
+                replacing: Bundle.main.bundleURL
+            )
+            updateState = .installing(release)
+            terminateApplication()
+        } catch {
+            availableUpdate = release
+            updateState = .failed(error.localizedDescription)
         }
     }
 

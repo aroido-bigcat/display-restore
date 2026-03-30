@@ -101,12 +101,41 @@ public struct ShortcutSettings: Codable, Equatable, Sendable {
 public struct AppSettings: Codable, Equatable, Sendable {
     public var launchAtLogin: Bool
     public var shortcuts: ShortcutSettings
+    public var automaticallyCheckForUpdates: Bool
+    public var skippedReleaseVersion: String?
+
+    enum CodingKeys: String, CodingKey {
+        case launchAtLogin
+        case shortcuts
+        case automaticallyCheckForUpdates
+        case skippedReleaseVersion
+    }
 
     public init(
         launchAtLogin: Bool = false,
-        shortcuts: ShortcutSettings = ShortcutSettings()
+        shortcuts: ShortcutSettings = ShortcutSettings(),
+        automaticallyCheckForUpdates: Bool = true,
+        skippedReleaseVersion: String? = nil
     ) {
         self.launchAtLogin = launchAtLogin
         self.shortcuts = shortcuts
+        self.automaticallyCheckForUpdates = automaticallyCheckForUpdates
+        self.skippedReleaseVersion = skippedReleaseVersion
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
+        shortcuts = try container.decodeIfPresent(ShortcutSettings.self, forKey: .shortcuts) ?? ShortcutSettings()
+        automaticallyCheckForUpdates = try container.decodeIfPresent(Bool.self, forKey: .automaticallyCheckForUpdates) ?? true
+        skippedReleaseVersion = try container.decodeIfPresent(String.self, forKey: .skippedReleaseVersion)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(launchAtLogin, forKey: .launchAtLogin)
+        try container.encode(shortcuts, forKey: .shortcuts)
+        try container.encode(automaticallyCheckForUpdates, forKey: .automaticallyCheckForUpdates)
+        try container.encodeIfPresent(skippedReleaseVersion, forKey: .skippedReleaseVersion)
     }
 }

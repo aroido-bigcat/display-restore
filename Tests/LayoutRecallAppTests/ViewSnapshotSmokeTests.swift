@@ -40,35 +40,87 @@ func renderMenuAndSettingsSnapshots() async throws {
 
     let menuURL = outputDirectory.appendingPathComponent("menu.png", isDirectory: false)
     let settingsURL = outputDirectory.appendingPathComponent("settings.png", isDirectory: false)
+    let profilesURL = outputDirectory.appendingPathComponent("settings-profiles.png", isDirectory: false)
+    let diagnosticsURL = outputDirectory.appendingPathComponent("settings-diagnostics.png", isDirectory: false)
+    let shortcutsURL = outputDirectory.appendingPathComponent("settings-shortcuts.png", isDirectory: false)
+    let generalURL = outputDirectory.appendingPathComponent("settings-general.png", isDirectory: false)
 
     let menuLayoutSize = try render(
-        view: MenuContentView(model: model),
+        view: MenuContentView(model: model, openSettings: {}),
         to: menuURL,
-        minimumSize: CGSize(width: 320, height: 300)
+        minimumSize: CGSize(width: 300, height: 260)
     )
     let settingsLayoutSize = try render(
         view: SettingsView(model: model),
         to: settingsURL,
         minimumSize: CGSize(width: 560, height: 520)
     )
+    let profilesLayoutSize = try render(
+        view: SettingsView(model: model, initialPane: .profiles),
+        to: profilesURL,
+        minimumSize: CGSize(width: 560, height: 520)
+    )
+    let diagnosticsLayoutSize = try render(
+        view: SettingsView(model: model, initialPane: .diagnostics),
+        to: diagnosticsURL,
+        minimumSize: CGSize(width: 560, height: 520)
+    )
+    let shortcutsLayoutSize = try render(
+        view: SettingsView(model: model, initialPane: .shortcuts),
+        to: shortcutsURL,
+        minimumSize: CGSize(width: 560, height: 520)
+    )
+    let generalLayoutSize = try render(
+        view: SettingsView(model: model, initialPane: .general),
+        to: generalURL,
+        minimumSize: CGSize(width: 560, height: 520)
+    )
 
     #expect(FileManager.default.fileExists(atPath: menuURL.path()))
     #expect(FileManager.default.fileExists(atPath: settingsURL.path()))
+    #expect(FileManager.default.fileExists(atPath: profilesURL.path()))
+    #expect(FileManager.default.fileExists(atPath: diagnosticsURL.path()))
+    #expect(FileManager.default.fileExists(atPath: shortcutsURL.path()))
+    #expect(FileManager.default.fileExists(atPath: generalURL.path()))
 
     let menuImageSize = try imageSize(at: menuURL)
     let settingsImageSize = try imageSize(at: settingsURL)
+    let profilesImageSize = try imageSize(at: profilesURL)
+    let diagnosticsImageSize = try imageSize(at: diagnosticsURL)
+    let shortcutsImageSize = try imageSize(at: shortcutsURL)
+    let generalImageSize = try imageSize(at: generalURL)
 
-    #expect(menuLayoutSize.width >= 320)
-    #expect(menuLayoutSize.height >= 280)
+    #expect(menuLayoutSize.width >= 300)
+    #expect(menuLayoutSize.height >= 240)
     #expect(menuLayoutSize.width <= 720)
     #expect(menuLayoutSize.height <= 840)
     #expect(settingsLayoutSize.width >= 760)
     #expect(settingsLayoutSize.height >= 520)
     #expect(settingsLayoutSize.width <= 900)
+    #expect(profilesLayoutSize.width >= 760)
+    #expect(profilesLayoutSize.height >= 520)
+    #expect(profilesLayoutSize.width <= 900)
+    #expect(diagnosticsLayoutSize.width >= 760)
+    #expect(diagnosticsLayoutSize.height >= 520)
+    #expect(diagnosticsLayoutSize.width <= 900)
+    #expect(shortcutsLayoutSize.width >= 760)
+    #expect(shortcutsLayoutSize.height >= 520)
+    #expect(shortcutsLayoutSize.width <= 900)
+    #expect(generalLayoutSize.width >= 760)
+    #expect(generalLayoutSize.height >= 520)
+    #expect(generalLayoutSize.width <= 900)
     #expect(menuImageSize.width >= menuLayoutSize.width)
     #expect(menuImageSize.height >= menuLayoutSize.height)
     #expect(settingsImageSize.width >= settingsLayoutSize.width)
     #expect(settingsImageSize.height >= settingsLayoutSize.height)
+    #expect(profilesImageSize.width >= profilesLayoutSize.width)
+    #expect(profilesImageSize.height >= profilesLayoutSize.height)
+    #expect(diagnosticsImageSize.width >= diagnosticsLayoutSize.width)
+    #expect(diagnosticsImageSize.height >= diagnosticsLayoutSize.height)
+    #expect(shortcutsImageSize.width >= shortcutsLayoutSize.width)
+    #expect(shortcutsImageSize.height >= shortcutsLayoutSize.height)
+    #expect(generalImageSize.width >= generalLayoutSize.width)
+    #expect(generalImageSize.height >= generalLayoutSize.height)
 }
 
 @MainActor

@@ -4,6 +4,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODE="full"
+SCRATCH_PATH="${SCRATCH_PATH:-$HOME/Library/Caches/layoutrecall-build}"
+UI_TEST_INSTALL_DIR="${UI_TEST_INSTALL_DIR:-$ROOT_DIR/dist-ui-harness}"
 
 if [[ "${1:-}" == "--mode" ]]; then
     MODE="${2:-}"
@@ -17,5 +19,35 @@ fi
 
 cd "$ROOT_DIR"
 
-make build
-make test
+make build SCRATCH_PATH="$SCRATCH_PATH"
+
+swift test --no-parallel --scratch-path "$SCRATCH_PATH" \
+    --skip liveActionHandlersExercisePersistedRestoreAndUpdateFlows \
+    --skip liveHardwareRestoreCommandExecutesAgainstCurrentLayout \
+    --skip liveHardwareSwapLeftRightRoundTripsBackToOriginalLayout \
+    --skip liveHardwareDisplaySnapshotMatchesItsOwnDraftProfile \
+    --skip liveHardwareSleepWakeCyclesStayRestorable \
+    --skip liveUIHarnessClicksPersistExpectedState
+
+run_live_test_if_requested() {
+    local flag_name="$1"
+    local test_filter="$2"
+
+    if [[ "${!flag_name:-}" == "1" ]]; then
+        echo "running live test: $test_filter"
+        swift test --no-parallel --filter "$test_filter" --scratch-path "$SCRATCH_PATH"
+    fi
+}
+
+run_live_test_if_requested "LAYOUTRECALL_RUN_LIVE_E2E" "liveActionHandlersExercisePersistedRestoreAndUpdateFlows"
+run_live_test_if_requested "DISPLAY_RESTORE_RUN_LIVE_RESTORE_TESTS" "liveHardwareRestoreCommandExecutesAgainstCurrentLayout"
+run_live_test_if_requested "DISPLAY_RESTORE_RUN_LIVE_SWAP_TESTS" "liveHardwareSwapLeftRightRoundTripsBackToOriginalLayout"
+run_live_test_if_requested "DISPLAY_RESTORE_RUN_LIVE_HARDWARE_TESTS" "liveHardwareDisplaySnapshotMatchesItsOwnDraftProfile"
+run_live_test_if_requested "DISPLAY_RESTORE_RUN_LIVE_STRESS_TESTS" "liveHardwareSleepWakeCyclesStayRestorable"
+
+if [[ "${LAYOUTRECALL_RUN_LIVE_UI_TESTS:-}" == "1" ]]; then
+    FORCE_REGULAR_APP=1 INSTALL_DIR="$UI_TEST_INSTALL_DIR" "$ROOT_DIR/scripts/install-test-app"
+    export LAYOUTRECALL_UI_APP_BUNDLE_PATH="$UI_TEST_INSTALL_DIR/LayoutRecall.app"
+fi
+
+run_live_test_if_requested "LAYOUTRECALL_RUN_LIVE_UI_TESTS" "liveUIHarnessClicksPersistExpectedState"

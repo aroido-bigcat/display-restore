@@ -196,6 +196,18 @@ public enum LayoutRecallRuntimeError: LocalizedError, Sendable {
 
 enum LayoutRecallStorage {
     static func baseDirectory() -> URL {
+        if let overrideRoot = commandLineValue(for: "--storage-root"),
+           !overrideRoot.isEmpty
+        {
+            return URL(fileURLWithPath: overrideRoot, isDirectory: true)
+        }
+
+        if let overrideRoot = ProcessInfo.processInfo.environment["LAYOUTRECALL_STORAGE_ROOT"],
+           !overrideRoot.isEmpty
+        {
+            return URL(fileURLWithPath: overrideRoot, isDirectory: true)
+        }
+
         let baseDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
 
@@ -204,5 +216,19 @@ enum LayoutRecallStorage {
 
     static func fileURL(named name: String) -> URL {
         baseDirectory().appendingPathComponent(name, isDirectory: false)
+    }
+
+    private static func commandLineValue(for option: String) -> String? {
+        if let exactMatch = CommandLine.arguments.first(where: { $0.hasPrefix("\(option)=") }) {
+            return String(exactMatch.dropFirst(option.count + 1))
+        }
+
+        guard let index = CommandLine.arguments.firstIndex(of: option),
+              CommandLine.arguments.indices.contains(index + 1)
+        else {
+            return nil
+        }
+
+        return CommandLine.arguments[index + 1]
     }
 }

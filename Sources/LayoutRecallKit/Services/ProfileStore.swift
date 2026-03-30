@@ -13,7 +13,14 @@ public actor ProfileStore: ProfileStoring {
         }
 
         let data = try Data(contentsOf: fileURL)
-        return try JSONDecoder().decode([DisplayProfile].self, from: data)
+        let iso8601Decoder = JSONDecoder()
+        iso8601Decoder.dateDecodingStrategy = .iso8601
+
+        do {
+            return try iso8601Decoder.decode([DisplayProfile].self, from: data)
+        } catch {
+            return try JSONDecoder().decode([DisplayProfile].self, from: data)
+        }
     }
 
     public func saveProfiles(_ profiles: [DisplayProfile]) async throws {

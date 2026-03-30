@@ -161,7 +161,126 @@ struct KeyValueRow: View {
     }
 }
 
+struct DisplayLayoutPreview: View {
+    let displays: [DisplaySnapshot]
+    let primaryDisplayKey: String?
+
+    private struct NormalizedDisplay: Identifiable {
+        let id: String
+        let frame: CGRect
+        let isPrimary: Bool
+        let index: Int
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            let normalizedDisplays = normalizedDisplays(in: proxy.size)
+
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.66))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(Color(nsColor: .separatorColor).opacity(0.26), lineWidth: 1)
+                    )
+
+                ForEach(normalizedDisplays) { display in
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(
+                            display.isPrimary
+                                ? Color.accentColor.opacity(0.28)
+                                : Color.primary.opacity(0.08)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(
+                                    display.isPrimary
+                                        ? Color.accentColor.opacity(0.56)
+                                        : Color(nsColor: .separatorColor).opacity(0.30),
+                                    lineWidth: 1
+                                )
+                        )
+                        .frame(width: display.frame.width, height: display.frame.height)
+                        .position(
+                            x: display.frame.midX,
+                            y: display.frame.midY
+                        )
+                        .overlay(
+                            Text("\(display.index)")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(display.isPrimary ? Color.white : Color.secondary)
+                                .padding(5),
+                            alignment: .topLeading
+                        )
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func normalizedDisplays(in size: CGSize) -> [NormalizedDisplay] {
+        guard !displays.isEmpty else {
+            return []
+        }
+
+        let minX = displays.map(\.bounds.x).min() ?? 0
+        let minY = displays.map(\.bounds.y).min() ?? 0
+        let maxX = displays.map { $0.bounds.x + $0.bounds.width }.max() ?? 1
+        let maxY = displays.map { $0.bounds.y + $0.bounds.height }.max() ?? 1
+
+        let layoutWidth = max(1, maxX - minX)
+        let layoutHeight = max(1, maxY - minY)
+
+        let horizontalPadding: CGFloat = 10
+        let verticalPadding: CGFloat = 10
+        let availableWidth = max(1, size.width - horizontalPadding * 2)
+        let availableHeight = max(1, size.height - verticalPadding * 2)
+        let scale = min(
+            availableWidth / CGFloat(layoutWidth),
+            availableHeight / CGFloat(layoutHeight)
+        )
+        let contentWidth = CGFloat(layoutWidth) * scale
+        let contentHeight = CGFloat(layoutHeight) * scale
+        let offsetX = (size.width - contentWidth) / 2
+        let offsetY = (size.height - contentHeight) / 2
+
+        return displays.enumerated().map { index, display in
+            let x = offsetX + CGFloat(display.bounds.x - minX) * scale
+            let y = offsetY + CGFloat(maxY - (display.bounds.y + display.bounds.height)) * scale
+            let frame = CGRect(
+                x: x,
+                y: y,
+                width: max(24, CGFloat(display.bounds.width) * scale),
+                height: max(18, CGFloat(display.bounds.height) * scale)
+            )
+
+            return NormalizedDisplay(
+                id: display.id,
+                frame: frame,
+                isPrimary: primaryDisplayKey.map(display.allMatchKeys.contains) ?? false,
+                index: index + 1
+            )
+        }
+    }
+}
+
 extension DiagnosticsEntry {
+    var confidenceSummary: String? {
+        guard let score else {
+            return nil
+        }
+
+        if score >= 85 {
+            return L10n.t("confidence.high")
+        }
+
+        if score >= 70 {
+            return L10n.t("confidence.review")
+        }
+
+        return L10n.t("confidence.low")
+    }
+
     var displayTitle: String {
         switch actionTaken {
         case "auto-restore":
@@ -171,7 +290,7 @@ extension DiagnosticsEntry {
         case "manual-recovery":
             return L10n.t("diagnostic.title.manualRecovery")
         case "save-profile":
-            return L10n.t("diagnostic.title.savedCurrentLayout")
+            return L10n.t("diagnostic.title.saveNewProfile")
         case "save-new-profile":
             return L10n.t("diagnostic.title.saveNewProfile")
         case "swap-left-right":
@@ -287,5 +406,20 @@ struct ActionButtonStyle: ButtonStyle {
         case .quiet:
             Color.clear
         }
+    }
+}
+
+struct InlineActionButtonStyle: ButtonStyle {
+    var accent = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(accent ? Color.accentColor : Color.secondary)
+            .padding(.horizontal, 2)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+            .opacity(configuration.isPressed ? 0.66 : 1)
+            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
     }
 }

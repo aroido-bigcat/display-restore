@@ -66,12 +66,139 @@ func bootstrapLoadsPersistedStateAndStartsMonitoring() async {
     #expect(model.launchAtLoginEnabled == true)
     #expect(model.loginItemLine == LaunchAtLoginState.enabled.description)
     #expect(model.dependencyLine == L10n.t("restoreExecutor.availableAt", "/usr/local/bin/displayplacer"))
+    #expect(model.dependencySummaryLine == L10n.t("restore.dependency.ready"))
     #expect(model.lastCommand == DisplayProfile.officeDock.layout.engine.command)
     #expect(model.menuPrimaryState == .healthy)
+    #expect(model.menuPrimaryAction == nil)
+    #expect(model.menuQuickActions == [.saveNewProfile])
+    #expect(model.restorePrimaryAction == nil)
+    #expect(model.restoreSecondaryActions == [.saveNewProfile])
     #expect(model.menuStatusTitle == L10n.t("menu.state.readyProfile", "Office Dock"))
-    #expect(model.menuStatusSubtitle == L10n.t("restoreDecision.confidentMatch"))
+    #expect(model.menuStatusSubtitle == L10n.t("menu.subtitle.ready"))
     #expect(model.menuMetadataLine.contains(L10n.t("confidence.high")))
+    #expect(model.canSwapDisplays == true)
+    #expect(model.swapAvailabilityLine == L10n.t("settings.swap.ready"))
     #expect(eventMonitor.startCallCount == 1)
+}
+
+@MainActor
+@Test
+func presentationActionsReflectMissingBaseline() async {
+    let installer = DependencyInstallerStub()
+    let model = AppModel(
+        store: ProfileStoreStub(),
+        settingsStore: AppSettingsStoreStub(),
+        diagnosticsStore: DiagnosticsStoreStub(),
+        snapshotReader: SnapshotReaderStub(displays: [.sampleLeft, .sampleRight]),
+        eventMonitor: EventMonitorStub(),
+        commandBuilder: StaticCommandBuilder(
+            restorePlanResult: sampleRestorePlan(),
+            swapPlanResult: sampleSwapPlan()
+        ),
+        executor: RestoreExecutorStub(),
+        dependencyInstaller: installer,
+        verifier: RestoreVerifierStub(result: .skipped),
+        loginItemManager: LoginItemManagerStub(),
+        debounceNanoseconds: 1_000_000,
+        restoreCooldown: 0,
+        autoBootstrap: false
+    )
+
+    await model.bootstrap()
+
+    #expect(model.menuPrimaryState == .noProfiles)
+    #expect(model.menuPrimaryAction == .saveNewProfile)
+    #expect(model.menuQuickActions.isEmpty)
+    #expect(model.restorePrimaryAction == .saveNewProfile)
+    #expect(model.restoreSecondaryActions.isEmpty)
+    #expect(model.menuStatusSubtitle == L10n.t("menu.subtitle.noProfiles"))
+}
+
+@MainActor
+@Test
+func presentationActionsReflectMissingDependency() async {
+    let installer = DependencyInstallerStub()
+    let model = AppModel(
+        store: ProfileStoreStub(profiles: [.officeDock]),
+        settingsStore: AppSettingsStoreStub(),
+        diagnosticsStore: DiagnosticsStoreStub(),
+        snapshotReader: SnapshotReaderStub(displays: [.sampleLeft, .sampleRight]),
+        eventMonitor: EventMonitorStub(),
+        commandBuilder: StaticCommandBuilder(
+            restorePlanResult: sampleRestorePlan(),
+            swapPlanResult: sampleSwapPlan()
+        ),
+        executor: RestoreExecutorStub(
+            dependency: .init(
+                isAvailable: false,
+                location: nil,
+                details: L10n.t("restoreExecutor.dependencyMissing")
+            )
+        ),
+        dependencyInstaller: installer,
+        verifier: RestoreVerifierStub(result: .skipped),
+        loginItemManager: LoginItemManagerStub(),
+        debounceNanoseconds: 1_000_000,
+        restoreCooldown: 0,
+        autoBootstrap: false
+    )
+
+    await model.bootstrap()
+
+    #expect(model.menuPrimaryState == .dependencyMissing)
+    #expect(model.menuPrimaryAction == .installDependency)
+    #expect(model.menuQuickActions == [.saveNewProfile])
+    #expect(model.restorePrimaryAction == .installDependency)
+    #expect(model.restoreSecondaryActions == [.saveNewProfile])
+    #expect(model.menuStatusSubtitle == L10n.t("menu.subtitle.dependencyMissing"))
+    #expect(model.dependencySummaryLine == L10n.t("restore.dependency.missing"))
+    #expect(model.canSwapDisplays == false)
+    #expect(model.swapAvailabilityLine == L10n.t("settings.swap.dependencyHint"))
+}
+
+@MainActor
+@Test
+func presentationActionsReflectManualRecoveryWithoutLeakingDependencyPath() async {
+    var profile = DisplayProfile.officeDock
+    profile.settings.autoRestore = false
+
+    let dependencyDetails = L10n.t("restoreExecutor.availableAt", "/usr/local/bin/displayplacer")
+    let installer = DependencyInstallerStub()
+    let model = AppModel(
+        store: ProfileStoreStub(profiles: [profile]),
+        settingsStore: AppSettingsStoreStub(),
+        diagnosticsStore: DiagnosticsStoreStub(),
+        snapshotReader: SnapshotReaderStub(displays: [.sampleLeft, .sampleRight]),
+        eventMonitor: EventMonitorStub(),
+        commandBuilder: StaticCommandBuilder(
+            restorePlanResult: sampleRestorePlan(),
+            swapPlanResult: sampleSwapPlan()
+        ),
+        executor: RestoreExecutorStub(
+            dependency: .init(
+                isAvailable: true,
+                location: "/usr/local/bin/displayplacer",
+                details: dependencyDetails
+            )
+        ),
+        dependencyInstaller: installer,
+        verifier: RestoreVerifierStub(result: .skipped),
+        loginItemManager: LoginItemManagerStub(),
+        debounceNanoseconds: 1_000_000,
+        restoreCooldown: 0,
+        autoBootstrap: false
+    )
+
+    await model.bootstrap()
+
+    #expect(model.menuPrimaryState == .manualRecovery)
+    #expect(model.menuPrimaryAction == .fixNow)
+    #expect(model.menuQuickActions == [.saveNewProfile])
+    #expect(model.restorePrimaryAction == .fixNow)
+    #expect(model.restoreSecondaryActions == [.saveNewProfile])
+    #expect(model.menuStatusSubtitle == L10n.t("menu.subtitle.manualRecovery"))
+    #expect(model.dependencyLine == dependencyDetails)
+    #expect(model.dependencySummaryLine == L10n.t("restore.dependency.ready"))
 }
 
 @MainActor
@@ -503,6 +630,168 @@ func bootstrapAutoInstallsDisplayplacerWhenMissing() async {
     #expect(model.diagnostics.first?.executionResult == DependencyInstallOutcome.installed.rawValue)
 }
 
+@MainActor
+@Test
+func automaticUpdateCheckCanSkipTheCurrentReleaseVersion() async {
+    let release = AppRelease(
+        tagName: "v0.2.0",
+        version: "0.2.0",
+        assetName: "LayoutRecall-0.2.0-macos.zip",
+        downloadURL: URL(string: "https://example.com/LayoutRecall-0.2.0-macos.zip")!,
+        publishedAt: nil,
+        releaseNotes: "Important fixes."
+    )
+    let settingsStore = AppSettingsStoreStub()
+    let prompt = UpdatePromptStub(response: .skipThisVersion)
+    let model = AppModel(
+        store: ProfileStoreStub(),
+        settingsStore: settingsStore,
+        diagnosticsStore: DiagnosticsStoreStub(),
+        snapshotReader: SnapshotReaderStub(displays: [.sampleLeft, .sampleRight]),
+        eventMonitor: EventMonitorStub(),
+        commandBuilder: StaticCommandBuilder(
+            restorePlanResult: sampleRestorePlan(),
+            swapPlanResult: sampleSwapPlan()
+        ),
+        executor: RestoreExecutorStub(),
+        dependencyInstaller: DependencyInstallerStub(),
+        verifier: RestoreVerifierStub(result: .skipped),
+        loginItemManager: LoginItemManagerStub(),
+        updateChecker: UpdateCheckerStub(release: release),
+        updateInstaller: UpdateInstallerStub(),
+        updatePrompt: prompt,
+        debounceNanoseconds: 1_000_000,
+        restoreCooldown: 0,
+        autoBootstrap: false
+    )
+
+    await model.bootstrap()
+
+    await waitUntil {
+        let savedSettings = await settingsStore.latestSavedSettings()
+        return model.skippedReleaseVersion == "0.2.0"
+            && model.updateState == .skipped(release)
+            && savedSettings?.skippedReleaseVersion == "0.2.0"
+    }
+
+    #expect(model.availableUpdate == release)
+    #expect(prompt.promptedVersions() == ["0.2.0"])
+}
+
+@MainActor
+@Test
+func manualUpdateCheckIgnoresSkippedVersionAndShowsAvailableRelease() async {
+    let release = AppRelease(
+        tagName: "v0.2.0",
+        version: "0.2.0",
+        assetName: "LayoutRecall-0.2.0-macos.zip",
+        downloadURL: URL(string: "https://example.com/LayoutRecall-0.2.0-macos.zip")!,
+        publishedAt: nil,
+        releaseNotes: "Important fixes."
+    )
+    let settingsStore = AppSettingsStoreStub(
+        settings: AppSettings(
+            automaticallyCheckForUpdates: true,
+            skippedReleaseVersion: "0.2.0"
+        )
+    )
+    let model = AppModel(
+        store: ProfileStoreStub(),
+        settingsStore: settingsStore,
+        diagnosticsStore: DiagnosticsStoreStub(),
+        snapshotReader: SnapshotReaderStub(displays: [.sampleLeft, .sampleRight]),
+        eventMonitor: EventMonitorStub(),
+        commandBuilder: StaticCommandBuilder(
+            restorePlanResult: sampleRestorePlan(),
+            swapPlanResult: sampleSwapPlan()
+        ),
+        executor: RestoreExecutorStub(),
+        dependencyInstaller: DependencyInstallerStub(),
+        verifier: RestoreVerifierStub(result: .skipped),
+        loginItemManager: LoginItemManagerStub(),
+        updateChecker: UpdateCheckerStub(release: release),
+        updateInstaller: UpdateInstallerStub(),
+        updatePrompt: UpdatePromptStub(response: .later),
+        debounceNanoseconds: 1_000_000,
+        restoreCooldown: 0,
+        autoBootstrap: false
+    )
+
+    await model.bootstrap()
+
+    await waitUntil {
+        model.updateState == .skipped(release)
+    }
+
+    model.checkForUpdatesNow()
+
+    await waitUntil {
+        model.updateState == .available(release)
+    }
+
+    #expect(model.availableUpdate == release)
+}
+
+@MainActor
+@Test
+func installingAvailableUpdateUsesInstallerAndTerminateHook() async {
+    let release = AppRelease(
+        tagName: "v0.2.0",
+        version: "0.2.0",
+        assetName: "LayoutRecall-0.2.0-macos.zip",
+        downloadURL: URL(string: "https://example.com/LayoutRecall-0.2.0-macos.zip")!,
+        publishedAt: nil,
+        releaseNotes: nil
+    )
+    let installer = UpdateInstallerStub()
+    let termination = TerminationRecorder()
+    let settingsStore = AppSettingsStoreStub(
+        settings: AppSettings(automaticallyCheckForUpdates: false)
+    )
+    let model = AppModel(
+        store: ProfileStoreStub(),
+        settingsStore: settingsStore,
+        diagnosticsStore: DiagnosticsStoreStub(),
+        snapshotReader: SnapshotReaderStub(displays: [.sampleLeft, .sampleRight]),
+        eventMonitor: EventMonitorStub(),
+        commandBuilder: StaticCommandBuilder(
+            restorePlanResult: sampleRestorePlan(),
+            swapPlanResult: sampleSwapPlan()
+        ),
+        executor: RestoreExecutorStub(),
+        dependencyInstaller: DependencyInstallerStub(),
+        verifier: RestoreVerifierStub(result: .skipped),
+        loginItemManager: LoginItemManagerStub(),
+        updateChecker: UpdateCheckerStub(release: release),
+        updateInstaller: installer,
+        updatePrompt: UpdatePromptStub(response: .later),
+        terminateApplication: {
+            termination.record()
+        },
+        debounceNanoseconds: 1_000_000,
+        restoreCooldown: 0,
+        autoBootstrap: false
+    )
+
+    await model.bootstrap()
+    model.checkForUpdatesNow()
+
+    await waitUntil {
+        model.updateState == .available(release)
+    }
+
+    model.installAvailableUpdate()
+
+    await waitUntil {
+        let installedRelease = await installer.installedRelease()
+        return installedRelease == release
+            && termination.count() == 1
+            && model.updateState == .installing(release)
+    }
+
+    #expect(await installer.replacedBundlePath() == Bundle.main.bundleURL.path)
+}
+
 private func sampleRestorePlan() -> GeneratedLayoutPlan {
     GeneratedLayoutPlan(
         command: DisplayProfile.officeDock.layout.engine.command,
@@ -612,6 +901,73 @@ private actor ShortcutManagerStub: ShortcutManaging {
 
     func trigger(_ action: ShortcutAction) async {
         handler?(action)
+    }
+}
+
+private actor UpdateCheckerStub: AppUpdateChecking {
+    private let release: AppRelease?
+
+    init(release: AppRelease?) {
+        self.release = release
+    }
+
+    func fetchLatestRelease() async throws -> AppRelease? {
+        release
+    }
+}
+
+private actor UpdateInstallerStub: AppUpdateInstalling {
+    private var release: AppRelease?
+    private var bundlePath: String?
+
+    func prepareUpdateInstallation(release: AppRelease, replacing bundleURL: URL) async throws {
+        self.release = release
+        bundlePath = bundleURL.path
+    }
+
+    func installedRelease() -> AppRelease? {
+        release
+    }
+
+    func replacedBundlePath() -> String? {
+        bundlePath
+    }
+}
+
+@MainActor
+private final class UpdatePromptStub: AppUpdatePrompting {
+    private let response: AppUpdatePromptResponse
+    private var versions: [String] = []
+
+    init(response: AppUpdatePromptResponse) {
+        self.response = response
+    }
+
+    @MainActor
+    func promptToInstall(release: AppRelease, currentVersion: String) async -> AppUpdatePromptResponse {
+        record(version: release.versionIdentifier)
+        return response
+    }
+
+    private func record(version: String) {
+        versions.append(version)
+    }
+
+    func promptedVersions() -> [String] {
+        versions
+    }
+}
+
+@MainActor
+private final class TerminationRecorder {
+    private var invocations = 0
+
+    func record() {
+        invocations += 1
+    }
+
+    func count() -> Int {
+        invocations
     }
 }
 
